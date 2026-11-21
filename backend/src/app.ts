@@ -30,7 +30,38 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
-// Health check
+// Root & Health check
+app.get('/', async (_req: Request, res: Response) => {
+  const dbHealth = await checkDBHealth();
+  res.json({
+    success: true,
+    message: 'Welcome to ShopEasy API Service 🚀',
+    version: '1.0.0',
+    status: 'online',
+    database: {
+      connected: dbHealth.isConnected,
+      state: dbHealth.state,
+    },
+    endpoints: {
+      health: '/health',
+      apiHealth: '/api/v1/health',
+      dbHealth: '/api/v1/health/db',
+      customerProducts: '/api/v1/customer/products',
+      customerCategories: '/api/v1/customer/categories',
+      adminAuth: '/api/v1/admin/auth/login',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api', (_req: Request, res: Response) => {
+  res.redirect('/');
+});
+
+app.get('/api/v1', (_req: Request, res: Response) => {
+  res.redirect('/');
+});
+
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
