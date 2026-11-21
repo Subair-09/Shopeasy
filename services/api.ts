@@ -2,9 +2,12 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Product, Category, Order } from '../types';
 
-// Live Vercel Backend URL
-export const PRODUCTION_API_URL = 'https://backend-9e74cbhds-subair-09s-projects.vercel.app/api/v1';
-export const ALT_PRODUCTION_API_URL = 'https://backend-subair-09s-projects.vercel.app/api/v1';
+// Live Vercel Backend URL (Defaults directly to your deployed backend, optionally overridable with EXPO_PUBLIC_API_URL)
+export const PRODUCTION_API_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  'https://backend-9e74cbhds-subair-09s-projects.vercel.app/api/v1';
+export const ALT_PRODUCTION_API_URL =
+  'https://backend-subair-09s-projects.vercel.app/api/v1';
 
 // Local Development URL
 export const DEV_API_URL = Platform.select({
