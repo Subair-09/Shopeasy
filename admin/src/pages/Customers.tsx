@@ -19,15 +19,17 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { Sparkline } from '../components/Sparkline';
-import { apiClient, MOCK_CUSTOMERS } from '../services/api';
+import { apiClient } from '../services/api';
 
 export const Customers: React.FC = () => {
-  const [customers, setCustomers] = useState(MOCK_CUSTOMERS);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Customers');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [customerErrors, setCustomerErrors] = useState<Record<string, string>>({});
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     email: '',
@@ -39,15 +41,20 @@ export const Customers: React.FC = () => {
   }, [statusFilter]);
 
   const fetchCustomers = async () => {
+    setLoading(true);
     try {
       const res = await apiClient.get('/customers', {
         params: { status: statusFilter, search },
       });
       if (res.data?.success && res.data?.data?.customers) {
         setCustomers(res.data.data.customers);
+      } else {
+        setCustomers([]);
       }
     } catch (err) {
-      // Keep mock customers
+      setCustomers([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,26 +77,30 @@ export const Customers: React.FC = () => {
     }
   };
 
+  const validateCustomer = () => {
+    const errs: Record<string, string> = {};
+    if (!newCustomer.name.trim()) errs.name = 'Customer name is required';
+    if (!newCustomer.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newCustomer.email)) {
+      errs.email = 'Valid email address is required';
+    }
+    if (!newCustomer.phone.trim()) errs.phone = 'Phone number is required';
+    setCustomerErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateCustomer()) return;
+
     try {
       await apiClient.post('/customers', newCustomer);
       fetchCustomers();
-    } catch (err) {
-      const mockNew = {
-        _id: `c_${Date.now()}`,
-        ...newCustomer,
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200',
-        totalOrders: 0,
-        totalSpent: 0,
-        totalSpentKobo: 0,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      };
-      setCustomers((prev) => [mockNew, ...prev]);
+      setAddModalOpen(false);
+      setNewCustomer({ name: '', email: '', phone: '' });
+      setCustomerErrors({});
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to add customer');
     }
-    setAddModalOpen(false);
-    setNewCustomer({ name: '', email: '', phone: '' });
   };
 
   const filteredCustomers = customers.filter((c) => {

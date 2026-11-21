@@ -7,12 +7,12 @@ interface FavoritesContextType {
   isFavorite: (productId: string) => boolean;
 }
 
-const FAVORITES_STORAGE_KEY = '@shopeasy_favorites_v1';
+const FAVORITES_STORAGE_KEY = '@shopeasy_favorites_v2';
 
 const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
 
 export const FavoritesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [favorites, setFavorites] = useState<string[]>(['prod-1', 'prod-3']); // initial favorites
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   useEffect(() => {
@@ -30,9 +30,11 @@ export const FavoritesProvider: React.FC<{ children: ReactNode }> = ({ children 
       const stored = await AsyncStorage.getItem(FAVORITES_STORAGE_KEY);
       if (stored) {
         setFavorites(JSON.parse(stored));
+      } else {
+        setFavorites([]);
       }
     } catch {
-      // keep initial
+      setFavorites([]);
     } finally {
       setIsLoaded(true);
     }

@@ -6,6 +6,8 @@ import {
   registerCustomerAPI,
   clearStoredToken,
   fetchCustomerProfileAPI,
+  updateCustomerProfileAPI,
+  addCustomerAddressAPI,
 } from '../services/api';
 
 interface AuthContextType {
@@ -13,49 +15,23 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   hasCompletedOnboarding: boolean;
-  login: (email?: string, password?: string) => Promise<boolean>;
+  login: (email: string, password?: string) => Promise<boolean>;
   register: (name: string, email: string, phone: string, password?: string) => Promise<boolean>;
   logout: () => Promise<void>;
   updateProfile: (updatedData: Partial<UserProfile>) => Promise<void>;
+  addAddress: (addr: { title: string; street: string; city: string; state: string; isDefault?: boolean }) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   resetOnboarding: () => Promise<void>;
 }
 
-const DEFAULT_USER: UserProfile = {
-  id: 'user-001',
-  name: 'Nurudeen Adewale',
-  email: 'nurudeen@example.com',
-  phone: '+234 812 345 6789',
-  avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80',
-  isPremium: true,
-  addresses: [
-    {
-      id: 'addr-1',
-      title: 'Home',
-      street: '14 Admiralty Way, Lekki Phase 1',
-      city: 'Lagos',
-      state: 'Lagos State',
-      isDefault: true,
-    },
-    {
-      id: 'addr-2',
-      title: 'Office',
-      street: 'Plot 5, Victoria Island Commercial District',
-      city: 'Lagos',
-      state: 'Lagos State',
-      isDefault: false,
-    },
-  ],
-};
-
-const USER_STORAGE_KEY = '@shopeasy_user_v1';
-const ONBOARDING_STORAGE_KEY = '@shopeasy_onboarded_v1';
+const USER_STORAGE_KEY = '@shopeasy_user_v2';
+const ONBOARDING_STORAGE_KEY = '@shopeasy_onboarded_v2';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(DEFAULT_USER);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -75,107 +51,135 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       if (storedUser) {
-        setUser(JSON.parse(storedUser));
+        const parsed = JSON.parse(storedUser);
+        setUser(parsed);
         setIsAuthenticated(true);
+
+        // Verify session with backend to ensure account is not suspended by admin
+        fetchCustomerProfileAPI()
+          .then((liveCust) => {
+            if (liveCust) {
+              const updatedUser: UserProfile = {
+                id: liveCust._id || liveCust.id,
+                name: liveCust.name || parsed.name,
+                email: liveCust.email || parsed.email,
+                phone: liveCust.phone || parsed.phone,
+                avatar: liveCust.avatar || parsed.avatar,
+                isPremium: Boolean(liveCust.isVip),
+                addresses: liveCust.addressList?.length > 0
+                  ? liveCust.addressList.map((a: any, idx: number) => ({
+                      id: a._id || `addr-${idx}`,
+                      title: a.title || 'Address',
+                      street: a.street || a.addressLine1 || '',
+                      city: a.city || '',
+                      state: a.state || '',
+                      isDefault: Boolean(a.isDefault),
+                    }))
+                  : parsed.addresses || [],
+              };
+              setUser(updatedUser);
+              AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser)).catch(() => {});
+            }
+          })
+          .catch((err) => {
+            // If backend says 401 or deactivated, log user out immediately
+            if (err.message?.includes('401') || err.message?.includes('disabled') || err.message?.includes('deactivated')) {
+              logout();
+            }
+          });
       } else {
-        // default to mock user for instant preview, but allow user logout/login
-        setUser(DEFAULT_USER);
-        setIsAuthenticated(true);
+        setUser(null);
+        setIsAuthenticated(false);
       }
     } catch (error) {
-      console.warn('Failed to load auth state', error);
-      setUser(DEFAULT_USER);
-      setIsAuthenticated(true);
+      setUser(null);
+      setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const login = async (email?: string, password?: string): Promise<boolean> => {
+  const login = async (email: string, password?: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const emailAddress = email || DEFAULT_USER.email;
-      let loggedInUser: UserProfile = {
-        ...DEFAULT_USER,
-        email: emailAddress,
-        name: emailAddress.split('@')[0].replace('.', ' '),
-      };
-
-      // Attempt live backend login
-      try {
-        const liveData = await loginCustomerAPI(emailAddress, password);
-        if (liveData?.customer) {
-          const cust = liveData.customer;
-          loggedInUser = {
-            id: cust._id || cust.id,
-            name: `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || loggedInUser.name,
-            email: cust.email || loggedInUser.email,
-            phone: cust.phone || loggedInUser.phone,
-            avatar: cust.avatar || loggedInUser.avatar,
-            isPremium: Boolean(cust.isVip),
-            addresses: cust.addresses?.length > 0 ? cust.addresses : DEFAULT_USER.addresses,
-          };
-        }
-      } catch (apiErr) {
-        // Gracefully continue with local/fallback profile
+      const liveData = await loginCustomerAPI(email.trim().toLowerCase(), password);
+      if (liveData?.customer) {
+        const cust = liveData.customer;
+        const loggedInUser: UserProfile = {
+          id: cust._id || cust.id,
+          name: cust.name || email.split('@')[0],
+          email: cust.email || email,
+          phone: cust.phone || '',
+          avatar: cust.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
+          isPremium: Boolean(cust.isVip),
+          addresses: cust.addressList?.length > 0
+            ? cust.addressList.map((a: any, idx: number) => ({
+                id: a._id || `addr-${idx}`,
+                title: a.title || 'Address',
+                street: a.street || a.addressLine1 || '',
+                city: a.city || '',
+                state: a.state || '',
+                isDefault: Boolean(a.isDefault),
+              }))
+            : [
+                {
+                  id: 'addr-default',
+                  title: 'Home',
+                  street: '14 Admiralty Way, Lekki Phase 1',
+                  city: 'Lagos',
+                  state: 'Lagos State',
+                  isDefault: true,
+                },
+              ],
+        };
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(loggedInUser));
+        setUser(loggedInUser);
+        setIsAuthenticated(true);
+        return true;
       }
-
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(loggedInUser));
-      setUser(loggedInUser);
-      setIsAuthenticated(true);
-      return true;
-    } catch {
+      return false;
+    } catch (err: any) {
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (name: string, email: string, phone: string, password?: string): Promise<boolean> => {
+  const register = async (
+    name: string,
+    email: string,
+    phone: string,
+    password?: string
+  ): Promise<boolean> => {
     setIsLoading(true);
     try {
-      let newUser: UserProfile = {
-        id: `user-${Date.now()}`,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
-        isPremium: false,
-        addresses: [
-          {
-            id: `addr-${Date.now()}`,
-            title: 'Home',
-            street: '12 Marina Road',
-            city: 'Lagos',
-            state: 'Lagos State',
-            isDefault: true,
-          },
-        ],
-      };
-
-      // Attempt live backend registration
-      try {
-        const liveData = await registerCustomerAPI(name, email, phone, password);
-        if (liveData?.customer) {
-          const cust = liveData.customer;
-          newUser = {
-            id: cust._id || cust.id,
-            name: `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || name,
-            email: cust.email || email,
-            phone: cust.phone || phone,
-            avatar: cust.avatar || newUser.avatar,
-            isPremium: false,
-            addresses: cust.addresses?.length > 0 ? cust.addresses : newUser.addresses,
-          };
-        }
-      } catch (apiErr) {
-        // Fallback gracefully
+      const liveData = await registerCustomerAPI(name, email, phone, password);
+      if (liveData?.customer) {
+        const cust = liveData.customer;
+        const newUser: UserProfile = {
+          id: cust._id || cust.id,
+          name: cust.name || name,
+          email: cust.email || email,
+          phone: cust.phone || phone,
+          avatar: cust.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
+          isPremium: false,
+          addresses: [
+            {
+              id: `addr-${Date.now()}`,
+              title: 'Home',
+              street: '14 Admiralty Way, Lekki Phase 1',
+              city: 'Lagos',
+              state: 'Lagos State',
+              isDefault: true,
+            },
+          ],
+        };
+        await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
+        setUser(newUser);
+        setIsAuthenticated(true);
+        return true;
       }
-
-      await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
-      setUser(newUser);
-      setIsAuthenticated(true);
-      return true;
+      return false;
     } catch {
       return false;
     } finally {
@@ -202,6 +206,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const updated = { ...user, ...updatedData };
     setUser(updated);
     await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
+    try {
+      await updateCustomerProfileAPI({
+        name: updatedData.name,
+        phone: updatedData.phone,
+        avatar: updatedData.avatar,
+      });
+    } catch {}
+  };
+
+  const addAddress = async (addr: {
+    title: string;
+    street: string;
+    city: string;
+    state: string;
+    isDefault?: boolean;
+  }) => {
+    if (!user) return;
+    const newAddress = {
+      id: `addr-${Date.now()}`,
+      ...addr,
+      isDefault: Boolean(addr.isDefault),
+    };
+    const updatedAddresses = [...(user.addresses || []), newAddress];
+    const updatedUser = { ...user, addresses: updatedAddresses };
+    setUser(updatedUser);
+    await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    try {
+      await addCustomerAddressAPI(addr);
+    } catch {}
   };
 
   const completeOnboarding = async () => {
@@ -225,6 +258,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         register,
         logout,
         updateProfile,
+        addAddress,
         completeOnboarding,
         resetOnboarding,
       }}

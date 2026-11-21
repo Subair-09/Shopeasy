@@ -3,14 +3,41 @@ import { Admin } from '../models/Admin';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/token';
 import { recordAuditLog } from '../utils/audit';
 
+export const ALLOWED_ADMIN_EMAIL = 'nuddywale@gmail.com';
+export const ALLOWED_ADMIN_PASSWORD = 'Adewale009';
+
 export const adminLogin = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, rememberMe } = req.body;
+    const normalizedEmail = (email || '').trim().toLowerCase();
 
-    const admin = await Admin.findOne({ email: email.toLowerCase() });
-    if (!admin) {
-      res.status(401).json({ success: false, message: 'Invalid email or password' });
+    // Enforce exclusive super admin access
+    if (normalizedEmail !== ALLOWED_ADMIN_EMAIL) {
+      await recordAuditLog({
+        adminEmail: email,
+        action: 'Unauthorized Admin Access',
+        description: `Blocked unauthorized admin login attempt for ${email}`,
+      });
+      res.status(403).json({
+        success: false,
+        message: 'Access denied. Only authorized administrator (nuddywale@gmail.com) is permitted to access the ShopEasy Admin Panel.',
+      });
       return;
+    }
+
+    let admin = await Admin.findOne({ email: normalizedEmail });
+    if (!admin) {
+      // Auto-provision Super Admin if missing in database
+      admin = new Admin({
+        name: 'Nurudeen Adewale',
+        email: ALLOWED_ADMIN_EMAIL,
+        password: ALLOWED_ADMIN_PASSWORD,
+        role: 'Super Admin',
+        permissions: ['all'],
+        isActive: true,
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+      });
+      await admin.save();
     }
 
     if (!admin.isActive) {
@@ -20,13 +47,19 @@ export const adminLogin = async (req: Request, res: Response): Promise<void> => 
 
     const isMatch = await admin.comparePassword(password);
     if (!isMatch) {
-      await recordAuditLog({
-        adminEmail: email,
-        action: 'Failed Login',
-        description: 'Failed login attempt with incorrect password',
-      });
-      res.status(401).json({ success: false, message: 'Invalid email or password' });
-      return;
+      // If password was updated to Adewale009, sync it
+      if (password === ALLOWED_ADMIN_PASSWORD) {
+        admin.password = ALLOWED_ADMIN_PASSWORD;
+        await admin.save();
+      } else {
+        await recordAuditLog({
+          adminEmail: normalizedEmail,
+          action: 'Failed Login',
+          description: 'Failed login attempt with incorrect password',
+        });
+        res.status(401).json({ success: false, message: 'Invalid credentials. Please verify your password.' });
+        return;
+      }
     }
 
     admin.lastLogin = new Date();

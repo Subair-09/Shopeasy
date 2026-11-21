@@ -20,7 +20,8 @@ export const customerCreateOrder = async (req: any, res: Response): Promise<void
       return;
     }
 
-    if (!shippingAddress || !shippingAddress.street || !shippingAddress.city) {
+    const street = shippingAddress?.street || shippingAddress?.addressLine1;
+    if (!shippingAddress || !street || !shippingAddress.city) {
       res.status(400).json({ success: false, message: 'Valid delivery address is required' });
       return;
     }
@@ -75,7 +76,7 @@ export const customerCreateOrder = async (req: any, res: Response): Promise<void
     const orderNumber = `SE${dateStr}${randomSuffix}`;
     const addressStr = typeof shippingAddress === 'string'
       ? shippingAddress
-      : `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state || ''}`;
+      : `${shippingAddress.street || shippingAddress.addressLine1 || ''}, ${shippingAddress.city || ''}, ${shippingAddress.state || ''}`;
 
     const order = await Order.create({
       orderId: orderNumber,
@@ -126,11 +127,11 @@ export const customerCreateOrder = async (req: any, res: Response): Promise<void
     // Send customer notification
     await Notification.create({
       recipientType: 'customer',
-      customer: customer._id,
+      recipientId: customer._id,
       title: 'Order Placed Successfully!',
       message: `Your order #${order.orderNumber} for ₦${(totalKobo / 100).toLocaleString()} has been placed.`,
-      type: 'order_status',
-      data: { orderId: order._id.toString() },
+      type: 'order',
+      metadata: { orderId: order._id.toString() },
     });
 
     res.status(201).json({

@@ -24,14 +24,16 @@ const CARD_WIDTH = (width - 44) / 2;
 export default function CategoriesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const searchInputRef = useRef<any>(null);
 
   useEffect(() => {
     fetchCategoriesFromAPI().then((apiCategories) => {
-      if (apiCategories && apiCategories.length > 0) {
+      if (apiCategories) {
         setCategories(apiCategories);
       }
+      setLoading(false);
     });
   }, []);
 

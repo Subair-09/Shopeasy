@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CartItem, Product } from '../types';
-import { PRODUCTS } from '../constants/products';
+import { validatePromoCodeAPI, fetchStoreSettingsFromAPI } from '../services/api';
 
 interface CartContextType {
   cart: CartItem[];
@@ -15,7 +15,7 @@ interface CartContextType {
   promoCode: string;
   appliedPromo: string | null;
   discountRate: number;
-  applyPromoCode: (code: string) => { success: boolean; message: string };
+  applyPromoCode: (code: string) => Promise<{ success: boolean; message: string }>;
   removePromoCode: () => void;
   itemCount: number;
   selectedCount: number;
@@ -25,49 +25,33 @@ interface CartContextType {
   total: number;
 }
 
-const CART_STORAGE_KEY = '@shopeasy_cart_v2';
-
-// Initial items matching the exact reference image (Phone 3):
-// 1. Bluetooth Headphones ₦35,000
-// 2. Sports Shoes ₦45,000
-// Total Subtotal = ₦80,000, Delivery Fee = ₦2,000, Total = ₦82,000
-const INITIAL_CART_ITEMS: CartItem[] = [
-  {
-    product: PRODUCTS.find((p) => p.name === 'Bluetooth Headphones') || PRODUCTS[3],
-    quantity: 1,
-    selected: true,
-  },
-  {
-    product: PRODUCTS.find((p) => p.name === 'Sports Shoes') || PRODUCTS[1],
-    quantity: 1,
-    selected: true,
-  },
-];
-
-const VALID_PROMOS: Record<string, number> = {
-  SHOP10: 0.10,
-  SHOPEASY10: 0.10,
-  WELCOME20: 0.20,
-  MEGASALE: 0.15,
-  LAGOS50: 0.05,
-};
+const CART_STORAGE_KEY = '@shopeasy_cart_v3';
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>(INITIAL_CART_ITEMS);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [promoCode, setPromoCode] = useState<string>('');
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [discountAmountState, setDiscountAmountState] = useState<number>(0);
   const [discountRate, setDiscountRate] = useState<number>(0);
+  const [standardShippingFee, setStandardShippingFee] = useState<number>(2000);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState<number>(50000);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   useEffect(() => {
     loadCart();
+    fetchStoreSettingsFromAPI().then((settings) => {
+      if (settings) {
+        setStandardShippingFee(settings.standardShippingFee);
+        setFreeShippingThreshold(settings.freeShippingThreshold);
+      }
+    });
   }, []);
 
   useEffect(() => {
     if (isLoaded) {
-      saveCart(cart);
+      AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)).catch(() => {});
     }
   }, [cart, isLoaded]);
 
@@ -77,34 +61,31 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (stored) {
         setCart(JSON.parse(stored));
       } else {
-        setCart(INITIAL_CART_ITEMS);
+        setCart([]);
       }
     } catch {
-      setCart(INITIAL_CART_ITEMS);
+      setCart([]);
     } finally {
       setIsLoaded(true);
     }
   };
 
-  const saveCart = async (newCart: CartItem[]) => {
-    try {
-      await AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify(newCart));
-    } catch (e) {
-      console.warn('Failed to save cart', e);
-    }
-  };
-
-  const addToCart = (product: Product, quantity = 1, color?: string, size?: string) => {
+  const addToCart = (
+    product: Product,
+    quantity: number = 1,
+    color?: string,
+    size?: string
+  ) => {
     setCart((prev) => {
       const existingIndex = prev.findIndex((item) => item.product.id === product.id);
       if (existingIndex > -1) {
         const updated = [...prev];
+        const newQty = updated[existingIndex].quantity + quantity;
         updated[existingIndex] = {
           ...updated[existingIndex],
-          quantity: updated[existingIndex].quantity + quantity,
+          quantity: product.stock ? Math.min(newQty, product.stock) : newQty,
           selectedColor: color || updated[existingIndex].selectedColor,
           selectedSize: size || updated[existingIndex].selectedSize,
-          selected: true,
         };
         return updated;
       } else {
@@ -112,9 +93,9 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           ...prev,
           {
             product,
-            quantity,
-            selectedColor: color || product.colors?.[0],
-            selectedSize: size || product.sizes?.[0],
+            quantity: product.stock ? Math.min(quantity, product.stock) : quantity,
+            selectedColor: color,
+            selectedSize: size,
             selected: true,
           },
         ];
@@ -127,94 +108,109 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity < 1) {
+    if (quantity <= 0) {
+      removeFromCart(productId);
       return;
     }
     setCart((prev) =>
-      prev.map((item) =>
-        item.product.id === productId ? { ...item, quantity } : item
-      )
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          const maxStock = item.product.stock || 99;
+          return {
+            ...item,
+            quantity: Math.min(quantity, maxStock),
+          };
+        }
+        return item;
+      })
     );
   };
 
   const toggleSelect = (productId: string) => {
     setCart((prev) =>
-      prev.map((item) =>
-        item.product.id === productId
-          ? { ...item, selected: item.selected === false ? true : false }
-          : item
-      )
+      prev.map((item) => {
+        if (item.product.id === productId) {
+          return { ...item, selected: !item.selected };
+        }
+        return item;
+      })
     );
   };
 
-  const isAllSelected = useMemo(() => {
-    return cart.length > 0 && cart.every((item) => item.selected !== false);
-  }, [cart]);
-
   const toggleSelectAll = () => {
-    const target = !isAllSelected;
-    setCart((prev) => prev.map((item) => ({ ...item, selected: target })));
+    const allSelected = cart.every((item) => item.selected);
+    setCart((prev) => prev.map((item) => ({ ...item, selected: !allSelected })));
   };
+
+  const isAllSelected = useMemo(() => {
+    return cart.length > 0 && cart.every((item) => item.selected);
+  }, [cart]);
 
   const clearCart = () => {
     setCart([]);
+    setAppliedPromo(null);
+    setPromoCode('');
+    setDiscountRate(0);
+    setDiscountAmountState(0);
   };
 
-  const applyPromoCode = (code: string) => {
-    const cleanCode = code.trim().toUpperCase();
-    if (!cleanCode) {
-      return { success: false, message: 'Please enter a coupon code' };
+  const applyPromoCode = async (code: string): Promise<{ success: boolean; message: string }> => {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) {
+      return { success: false, message: 'Please enter a promo code' };
     }
-    if (VALID_PROMOS[cleanCode]) {
-      const rate = VALID_PROMOS[cleanCode];
-      setAppliedPromo(cleanCode);
-      setDiscountRate(rate);
-      return {
-        success: true,
-        message: `Promo ${cleanCode} applied! ${(rate * 100).toFixed(0)}% discount.`,
-      };
+
+    try {
+      const res = await validatePromoCodeAPI(trimmed, subtotal);
+      if (res.success) {
+        setAppliedPromo(trimmed);
+        setPromoCode(trimmed);
+        setDiscountAmountState(res.discountNaira);
+        return { success: true, message: `Code applied: ₦${res.discountNaira.toLocaleString()} discount!` };
+      } else {
+        return { success: false, message: res.message };
+      }
+    } catch {
+      return { success: false, message: 'Could not validate promo code with server' };
     }
-    return { success: false, message: 'Invalid promo code. Try SHOP10 or MEGASALE' };
   };
 
   const removePromoCode = () => {
     setAppliedPromo(null);
-    setDiscountRate(0);
     setPromoCode('');
+    setDiscountRate(0);
+    setDiscountAmountState(0);
   };
 
   const itemCount = useMemo(() => {
-    return cart.reduce((total, item) => total + item.quantity, 0);
-  }, [cart]);
-
-  const selectedItems = useMemo(() => {
-    return cart.filter((item) => item.selected !== false);
+    return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
 
   const selectedCount = useMemo(() => {
-    return selectedItems.reduce((total, item) => total + item.quantity, 0);
-  }, [selectedItems]);
+    return cart.filter((item) => item.selected).reduce((sum, item) => sum + item.quantity, 0);
+  }, [cart]);
 
   const subtotal = useMemo(() => {
-    return selectedItems.reduce(
-      (total, item) => total + item.product.price * item.quantity,
-      0
-    );
-  }, [selectedItems]);
+    return cart
+      .filter((item) => item.selected)
+      .reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  }, [cart]);
 
   const deliveryFee = useMemo(() => {
-    if (selectedItems.length === 0) return 0;
-    return 2000;
-  }, [selectedItems.length]);
+    if (subtotal === 0) return 0;
+    if (subtotal >= freeShippingThreshold) return 0;
+    return standardShippingFee;
+  }, [subtotal, freeShippingThreshold, standardShippingFee]);
 
   const discountAmount = useMemo(() => {
-    return Math.round(subtotal * discountRate);
-  }, [subtotal, discountRate]);
+    if (discountAmountState > 0) return discountAmountState;
+    if (discountRate > 0) return Math.round(subtotal * discountRate);
+    return 0;
+  }, [subtotal, discountRate, discountAmountState]);
 
   const total = useMemo(() => {
-    if (selectedItems.length === 0) return 0;
-    return Math.max(0, subtotal - discountAmount + deliveryFee);
-  }, [selectedItems.length, subtotal, discountAmount, deliveryFee]);
+    return Math.max(0, subtotal + deliveryFee - discountAmount);
+  }, [subtotal, deliveryFee, discountAmount]);
 
   return (
     <CartContext.Provider

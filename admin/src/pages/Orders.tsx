@@ -15,11 +15,12 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { Sparkline } from '../components/Sparkline';
-import { apiClient, MOCK_ORDERS } from '../services/api';
+import { apiClient } from '../services/api';
 
 export const Orders: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'All' | 'Pending' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled'>('All');
-  const [orders, setOrders] = useState(MOCK_ORDERS);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -30,15 +31,20 @@ export const Orders: React.FC = () => {
   }, [activeTab]);
 
   const fetchOrders = async () => {
+    setLoading(true);
     try {
       const res = await apiClient.get('/orders', {
         params: { status: activeTab, search },
       });
       if (res.data?.success && res.data?.data?.orders) {
         setOrders(res.data.data.orders);
+      } else {
+        setOrders([]);
       }
     } catch (err) {
-      // Keep mock orders
+      setOrders([]);
+    } finally {
+      setLoading(false);
     }
   };
 

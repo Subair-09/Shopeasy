@@ -22,51 +22,73 @@ import {
   Cell,
 } from 'recharts';
 import { Sparkline } from '../components/Sparkline';
-import { apiClient, MOCK_DASHBOARD, MOCK_ORDERS } from '../services/api';
+import { apiClient } from '../services/api';
+
+const EMPTY_DASHBOARD = {
+  metrics: {
+    totalSales: '₦0',
+    salesChange: '0%',
+    totalOrders: '0',
+    ordersChange: '0%',
+    totalCustomers: '0',
+    customersChange: '0%',
+    totalProducts: '0',
+    productsChange: '0%',
+  },
+  salesChart: [] as { date: string; sales: number; orders: number }[],
+  topProducts: [] as any[],
+  customerGrowth: {
+    total: '0',
+    newCustomersPercent: 0,
+    returningCustomersPercent: 0,
+  },
+};
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState<'7D' | '30D' | '90D' | '1Y'>('30D');
-  const [data, setData] = useState(MOCK_DASHBOARD);
-  const [orders, setOrders] = useState(MOCK_ORDERS);
+  const [data, setData] = useState(EMPTY_DASHBOARD);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const fetchDashboard = async () => {
+      setLoading(true);
       try {
         const res = await apiClient.get(`/dashboard?range=${timeRange}`);
         if (res.data?.success && res.data?.data) {
           const d = res.data.data;
           setData({
             metrics: {
-              totalSales: d.metrics.totalSalesFormatted || '₦245,780',
-              salesChange: d.metrics.salesGrowth || '12.5%',
-              totalOrders: String(d.metrics.totalOrders || '842'),
-              ordersChange: d.metrics.ordersGrowth || '8.3%',
-              totalCustomers: d.customerGrowth.totalCustomersFormatted || '12,450',
-              customersChange: d.metrics.customersGrowth || '15.7%',
-              totalProducts: String(d.metrics.totalProducts || '156'),
-              productsChange: d.metrics.productsGrowth || '0.6%',
+              totalSales: d.metrics?.totalSalesFormatted || '₦0',
+              salesChange: d.metrics?.salesGrowth || '0%',
+              totalOrders: String(d.metrics?.totalOrders || '0'),
+              ordersChange: d.metrics?.ordersGrowth || '0%',
+              totalCustomers: d.customerGrowth?.totalCustomersFormatted || String(d.metrics?.totalCustomers || '0'),
+              customersChange: d.metrics?.customersGrowth || '0%',
+              totalProducts: String(d.metrics?.totalProducts || '0'),
+              productsChange: d.metrics?.productsGrowth || '0%',
             },
-            salesChart: d.salesOverview.chartData || MOCK_DASHBOARD.salesChart,
+            salesChart: d.salesOverview?.chartData || [],
             topProducts: (d.topSellingProducts || []).map((p: any) => ({
               id: p._id,
               name: p.name,
-              price: `₦${(p.price || Math.round(p.discountedPriceKobo / 100)).toLocaleString()}`,
-              sold: `${p.salesCount >= 1000 ? (p.salesCount / 1000).toFixed(1) + 'k' : p.salesCount} sold`,
+              price: `₦${(p.price || Math.round((p.discountedPriceKobo || 0) / 100)).toLocaleString()}`,
+              sold: `${p.salesCount >= 1000 ? (p.salesCount / 1000).toFixed(1) + 'k' : p.salesCount || 0} sold`,
               image: p.images?.[0] || 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200',
             })),
             customerGrowth: {
-              total: d.customerGrowth.totalCustomersFormatted || '12.4K',
-              newCustomersPercent: d.customerGrowth.newCustomersPercentage || 68,
-              returningCustomersPercent: d.customerGrowth.returningCustomersPercentage || 32,
+              total: d.customerGrowth?.totalCustomersFormatted || '0',
+              newCustomersPercent: d.customerGrowth?.newCustomersPercentage || 0,
+              returningCustomersPercent: d.customerGrowth?.returningCustomersPercentage || 0,
             },
           });
-          if (d.recentOrders?.length > 0) {
-            setOrders(d.recentOrders);
-          }
+          setOrders(d.recentOrders || []);
         }
       } catch (err) {
-        // Keeps mock data seamlessly
+        // Clear or show empty
+      } finally {
+        setLoading(false);
       }
     };
     fetchDashboard();

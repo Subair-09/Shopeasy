@@ -1,74 +1,26 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppNotification } from '../types';
+import { fetchNotificationsAPI, markNotificationReadAPI } from '../services/api';
 
 interface NotificationsContextType {
   notifications: AppNotification[];
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
+  refreshNotifications: () => Promise<void>;
   unreadCount: number;
 }
 
-const NOTIFICATIONS_STORAGE_KEY = '@shopeasy_notifications_v1';
-
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'notif-1',
-    title: 'Order Delivered! 🎉',
-    message: 'Your package with Smart Watch (Order #SE-98241) has been delivered successfully.',
-    time: '2 hours ago',
-    isRead: false,
-    type: 'order',
-  },
-  {
-    id: 'notif-2',
-    title: 'Payment Successful',
-    message: 'Your payment of ₦65,000 for Order #SE-98241 via Paystack was confirmed.',
-    time: 'Yesterday',
-    isRead: false,
-    type: 'payment',
-  },
-  {
-    id: 'notif-3',
-    title: 'Mega Weekend Sale is Live! 🔥',
-    message: 'Get up to 50% discount on smartphones, headphones, and fashion items today.',
-    time: '2 days ago',
-    isRead: false,
-    type: 'promo',
-  },
-  {
-    id: 'notif-4',
-    title: 'Package Dispatched 🚚',
-    message: 'Order #SE-87192 has been dispatched and is on the way with rider.',
-    time: '3 days ago',
-    isRead: true,
-    type: 'order',
-  },
-  {
-    id: 'notif-5',
-    title: 'Order Received',
-    message: 'We have received your order #SE-76340 and the merchant is preparing your package.',
-    time: '4 days ago',
-    isRead: true,
-    type: 'order',
-  },
-];
+const NOTIFICATIONS_STORAGE_KEY = '@shopeasy_notifications_v2';
 
 const NotificationsContext = createContext<NotificationsContextType | undefined>(undefined);
 
 export const NotificationsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
-  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   useEffect(() => {
     loadNotifications();
   }, []);
-
-  useEffect(() => {
-    if (isLoaded) {
-      AsyncStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications)).catch(() => {});
-    }
-  }, [notifications, isLoaded]);
 
   const loadNotifications = async () => {
     try {
@@ -76,10 +28,23 @@ export const NotificationsProvider: React.FC<{ children: ReactNode }> = ({ child
       if (stored) {
         setNotifications(JSON.parse(stored));
       }
+
+      // Fetch live notifications from backend
+      const res = await fetchNotificationsAPI();
+      if (res?.notifications && Array.isArray(res.notifications)) {
+        const mapped: AppNotification[] = res.notifications.map((n: any) => ({
+          id: n._id || n.id,
+          title: n.title,
+          message: n.message,
+          time: new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          isRead: Boolean(n.isRead),
+          type: (n.type === 'order' || n.type === 'payment' || n.type === 'promo') ? n.type : 'system',
+        }));
+        setNotifications(mapped);
+        await AsyncStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(mapped));
+      }
     } catch {
-      setNotifications(INITIAL_NOTIFICATIONS);
-    } finally {
-      setIsLoaded(true);
+      // keep existing
     }
   };
 
@@ -87,6 +52,7 @@ export const NotificationsProvider: React.FC<{ children: ReactNode }> = ({ child
     setNotifications((prev) =>
       prev.map((item) => (item.id === id ? { ...item, isRead: true } : item))
     );
+    markNotificationReadAPI(id).catch(() => {});
   };
 
   const markAllAsRead = () => {
@@ -103,6 +69,7 @@ export const NotificationsProvider: React.FC<{ children: ReactNode }> = ({ child
         notifications,
         markAsRead,
         markAllAsRead,
+        refreshNotifications: loadNotifications,
         unreadCount,
       }}
     >

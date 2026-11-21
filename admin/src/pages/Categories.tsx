@@ -19,15 +19,17 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { Sparkline } from '../components/Sparkline';
-import { apiClient, MOCK_CATEGORIES } from '../services/api';
+import { apiClient } from '../services/api';
 
 export const Categories: React.FC = () => {
-  const [categories, setCategories] = useState(MOCK_CATEGORIES);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Statuses');
   const [sortBy, setSortBy] = useState('Latest');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<any | null>(null);
+  const [categoryErrors, setCategoryErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -40,13 +42,18 @@ export const Categories: React.FC = () => {
   }, []);
 
   const fetchCategories = async () => {
+    setLoading(true);
     try {
       const res = await apiClient.get('/categories');
       if (res.data?.success && res.data?.data?.categories) {
         setCategories(res.data.data.categories);
+      } else {
+        setCategories([]);
       }
     } catch (err) {
-      // Keep mock categories
+      setCategories([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -80,8 +87,17 @@ export const Categories: React.FC = () => {
     setCategories((prev) => prev.filter((c) => c._id !== id));
   };
 
+  const validateCategory = () => {
+    const errs: Record<string, string> = {};
+    if (!formData.name.trim()) errs.name = 'Category name is required';
+    setCategoryErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateCategory()) return;
+
     try {
       if (editingCategory) {
         await apiClient.put(`/categories/${editingCategory._id}`, formData);
@@ -89,23 +105,11 @@ export const Categories: React.FC = () => {
         await apiClient.post('/categories', formData);
       }
       fetchCategories();
-    } catch (err) {
-      if (editingCategory) {
-        setCategories((prev) =>
-          prev.map((c) => (c._id === editingCategory._id ? { ...c, ...formData } : c))
-        );
-      } else {
-        const newC = {
-          _id: `cat-${Date.now()}`,
-          ...formData,
-          slug: formData.name.toLowerCase().replace(/\s+/g, '-'),
-          productCount: 0,
-          isActive: true,
-        };
-        setCategories((prev: any) => [...prev, newC]);
-      }
+      setModalOpen(false);
+      setCategoryErrors({});
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to save category');
     }
-    setModalOpen(false);
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

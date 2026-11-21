@@ -37,8 +37,9 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [products, setProducts] = useState<Product[]>(PRODUCTS);
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
 
   useEffect(() => {
     loadHomeData();
@@ -50,9 +51,10 @@ export default function HomeScreen() {
         fetchProductsFromAPI(),
         fetchCategoriesFromAPI(),
       ]);
-      if (apiProducts && apiProducts.length > 0) setProducts(apiProducts);
-      if (apiCategories && apiCategories.length > 0) setCategories(apiCategories);
+      if (apiProducts) setProducts(apiProducts);
+      if (apiCategories) setCategories(apiCategories);
     } catch {}
+    setLoading(false);
   };
 
   const onRefresh = async () => {

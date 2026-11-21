@@ -19,10 +19,11 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { Sparkline } from '../components/Sparkline';
-import { apiClient, MOCK_PRODUCTS } from '../services/api';
+import { apiClient } from '../services/api';
 
 export const Products: React.FC = () => {
-  const [products, setProducts] = useState(MOCK_PRODUCTS);
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
   const [statusFilter, setStatusFilter] = useState('All Status');
@@ -32,6 +33,7 @@ export const Products: React.FC = () => {
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -48,6 +50,7 @@ export const Products: React.FC = () => {
   }, [categoryFilter, statusFilter, sortBy]);
 
   const fetchProducts = async () => {
+    setLoading(true);
     try {
       const res = await apiClient.get('/products', {
         params: {
@@ -59,9 +62,13 @@ export const Products: React.FC = () => {
       });
       if (res.data?.success && res.data?.data?.products) {
         setProducts(res.data.data.products);
+      } else {
+        setProducts([]);
       }
     } catch (err) {
-      // Keeps mock products
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -108,8 +115,21 @@ export const Products: React.FC = () => {
     setProducts((prev) => prev.filter((p) => p._id !== id));
   };
 
+  const validateProductForm = () => {
+    const errs: Record<string, string> = {};
+    if (!formData.name.trim()) errs.name = 'Product name is required';
+    if (!formData.sku.trim()) errs.sku = 'SKU is required (e.g. PRD-001)';
+    if (!formData.price || formData.price <= 0) errs.price = 'Valid price is required';
+    if (!formData.category) errs.category = 'Category is required';
+    if (formData.stock < 0) errs.stock = 'Stock quantity cannot be negative';
+    setFormErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateProductForm()) return;
+
     try {
       if (editingProduct) {
         await apiClient.put(`/products/${editingProduct._id}`, formData);
@@ -117,26 +137,11 @@ export const Products: React.FC = () => {
         await apiClient.post('/products', formData);
       }
       fetchProducts();
-    } catch (err) {
-      // Optimistic update in mock
-      if (editingProduct) {
-        setProducts((prev) =>
-          prev.map((p) => (p._id === editingProduct._id ? { ...p, ...formData } : p))
-        );
-      } else {
-        const newP = {
-          _id: `prod-${Date.now()}`,
-          ...formData,
-          rating: 4.5,
-          reviewCount: 0,
-          salesCount: 0,
-          isActive: true,
-          isFeatured: false,
-        };
-        setProducts((prev: any) => [newP, ...prev]);
-      }
+      setModalOpen(false);
+      setFormErrors({});
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to save product');
     }
-    setModalOpen(false);
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

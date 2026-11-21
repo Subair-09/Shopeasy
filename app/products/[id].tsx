@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Image,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -16,10 +17,11 @@ import { Header } from '../../components/Header';
 import { CustomButton } from '../../components/CustomButton';
 import { QuantitySelector } from '../../components/QuantitySelector';
 import { Toast } from '../../components/Toast';
-import { PRODUCTS } from '../../constants/products';
 import { formatNaira } from '../../utils/currency';
 import { useCart } from '../../context/CartContext';
 import { useFavorites } from '../../context/FavoritesContext';
+import { fetchProductByIdFromAPI } from '../../services/api';
+import { Product } from '../../types';
 
 const { width } = Dimensions.get('window');
 
@@ -29,32 +31,73 @@ export default function ProductDetailsScreen() {
   const { addToCart } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
 
-  const product = useMemo(() => {
-    return PRODUCTS.find((p) => p.id === id) || PRODUCTS[0];
-  }, [id]);
-
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const [quantity, setQuantity] = useState<number>(1);
-  const [selectedColor, setSelectedColor] = useState<string>(
-    product.colors?.[0] || '#15152D'
-  );
-  const [selectedSize, setSelectedSize] = useState<string>(
-    product.sizes?.[0] || 'M'
-  );
+  const [selectedColor, setSelectedColor] = useState<string>('#15152D');
+  const [selectedSize, setSelectedSize] = useState<string>('M');
   const [toastVisible, setToastVisible] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string>('');
 
-  const favorited = isFavorite(product.id);
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    fetchProductByIdFromAPI(id).then((res) => {
+      if (res?.product) {
+        setProduct(res.product);
+        if (res.product.colors?.[0]) setSelectedColor(res.product.colors[0]);
+        if (res.product.sizes?.[0]) setSelectedSize(res.product.sizes[0]);
+      }
+      setLoading(false);
+    });
+  }, [id]);
+
+  const favorited = product ? isFavorite(product.id) : false;
 
   const handleAddToCart = () => {
+    if (!product) return;
     addToCart(product, quantity, selectedColor, selectedSize);
     setToastMessage(`Added ${quantity} × ${product.name} to Cart`);
     setToastVisible(true);
   };
 
   const handleBuyNow = () => {
+    if (!product) return;
     addToCart(product, quantity, selectedColor, selectedSize);
     router.push('/checkout');
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <Header title="Product Details" showBack />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: 12, color: Colors.secondaryText, fontSize: 13, fontWeight: '500' }}>
+            Loading product details...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!product) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <Header title="Product Details" showBack />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Ionicons name="alert-circle-outline" size={56} color={Colors.secondaryText} />
+          <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.primaryText, marginTop: 12 }}>
+            Product Not Found
+          </Text>
+          <Text style={{ fontSize: 12, color: Colors.secondaryText, textAlign: 'center', marginTop: 4, marginBottom: 20 }}>
+            This item may have been updated or removed by the store owner.
+          </Text>
+          <CustomButton title="Browse Products" onPress={() => router.push('/products')} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const formattedReviews =
     product.reviewCount >= 1000

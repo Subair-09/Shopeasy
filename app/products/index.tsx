@@ -32,15 +32,19 @@ export default function ProductsListScreen() {
   const [searchQuery, setSearchQuery] = useState<string>(params.query || '');
   const [selectedCategory, setSelectedCategory] = useState<string>(params.category || 'all');
   const [sortBy, setSortBy] = useState<SortOption>('popular');
-  const [products, setProducts] = useState<Product[]>(PRODUCTS);
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchProductsFromAPI(selectedCategory).then((res) => {
-      if (res && res.length > 0) setProducts(res);
-    });
-    fetchCategoriesFromAPI().then((res) => {
-      if (res && res.length > 0) setCategories(res);
+    setLoading(true);
+    Promise.all([
+      fetchProductsFromAPI(selectedCategory),
+      fetchCategoriesFromAPI(),
+    ]).then(([prodRes, catRes]) => {
+      if (prodRes) setProducts(prodRes);
+      if (catRes) setCategories(catRes);
+      setLoading(false);
     });
   }, [selectedCategory]);
 

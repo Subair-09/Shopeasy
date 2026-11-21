@@ -42,8 +42,8 @@ export default function CartScreen() {
   const [toastMessage, setToastMessage] = useState<string>('');
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
 
-  const handleApplyPromo = () => {
-    const res = applyPromoCode(inputCode);
+  const handleApplyPromo = async () => {
+    const res = await applyPromoCode(inputCode);
     setToastMessage(res.message);
     setToastType(res.success ? 'success' : 'error');
     setToastVisible(true);

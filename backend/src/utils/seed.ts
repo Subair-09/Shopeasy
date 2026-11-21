@@ -16,14 +16,14 @@ const seedDatabase = async () => {
     // 1. Super Admin
     await Admin.deleteMany({});
     const superAdmin = await Admin.create({
-      name: 'Admin',
-      email: 'admin@shopeasy.com',
-      password: 'Admin@123456',
+      name: 'Nurudeen Adewale',
+      email: 'nuddywale@gmail.com',
+      password: 'Adewale009',
       role: 'Super Admin',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
       isActive: true,
     });
-    console.log(`[Seed] Super Admin created: ${superAdmin.email} / Admin@123456`);
+    console.log(`[Seed] Super Admin created: ${superAdmin.email} / Adewale009`);
 
     // 2. Store Settings
     await StoreSettings.deleteMany({});

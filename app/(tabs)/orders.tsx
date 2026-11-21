@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Image,
   Modal,
+  RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -33,11 +35,40 @@ const FILTER_TABS: FilterTab[] = [
 
 export default function OrdersScreen() {
   const router = useRouter();
-  const { orders } = useOrders();
+  const { orders, refreshOrders, cancelOrder } = useOrders();
   const { unreadCount } = useNotifications();
 
   const [activeTab, setActiveTab] = useState<FilterTab>('All');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refreshOrders();
+    setRefreshing(false);
+  };
+
+  const handleCancelOrder = async () => {
+    if (!selectedOrder) return;
+    Alert.alert(
+      'Cancel Order',
+      'Are you sure you want to cancel this order? This action cannot be undone.',
+      [
+        { text: 'No, Keep Order', style: 'cancel' },
+        {
+          text: 'Yes, Cancel Order',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await cancelOrder(selectedOrder.id);
+            if (success) {
+              setSelectedOrder(null);
+              Alert.alert('Order Cancelled', 'Your order cancellation request has been processed.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const filteredOrders = useMemo(() => {
     if (activeTab === 'All') return orders;
@@ -77,6 +108,9 @@ export default function OrdersScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />
+        }
       >
         {filteredOrders.length === 0 ? (
           <EmptyOrders

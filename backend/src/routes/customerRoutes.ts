@@ -27,15 +27,30 @@ import {
 import { authenticateCustomer } from '../middleware/auth';
 import { uploadSingleImage } from '../middleware/upload';
 import { uploadImage } from '../controllers/uploadController';
+import {
+  customerGetSettings,
+  customerGetPromotions,
+  customerValidatePromoCode,
+  customerGetProductReviews,
+  customerCreateProductReview,
+  customerGetNotifications,
+  customerMarkNotificationRead,
+  customerCreateSupportTicket,
+  customerGetSupportTickets,
+} from '../controllers/customerExtras';
 import { validate } from '../middleware/validate';
 import { CustomerRegisterSchema, CustomerLoginSchema } from '../validators';
 
 const router = Router();
 
-// ==================== Public Catalog Routes ====================
+// ==================== Public Catalog & Store Settings Routes ====================
 router.get('/products', customerGetProducts);
 router.get('/products/:id', customerGetProductById);
+router.get('/products/:id/reviews', customerGetProductReviews);
 router.get('/categories', customerGetCategories);
+router.get('/settings', customerGetSettings);
+router.get('/promotions', customerGetPromotions);
+router.post('/promotions/validate', customerValidatePromoCode);
 
 // ==================== Customer Auth Routes ====================
 router.post('/auth/register', validate(CustomerRegisterSchema), customerRegister);
@@ -49,6 +64,17 @@ router.get('/auth/profile', customerGetProfile);
 router.put('/auth/profile', customerUpdateProfile);
 router.post('/auth/address', customerAddAddress);
 router.post('/upload', uploadSingleImage, uploadImage);
+
+// Reviews & Ratings
+router.post('/products/:id/reviews', customerCreateProductReview);
+
+// Notifications
+router.get('/notifications', customerGetNotifications);
+router.patch('/notifications/:id/read', customerMarkNotificationRead);
+
+// Support Tickets
+router.get('/support/tickets', customerGetSupportTickets);
+router.post('/support/tickets', customerCreateSupportTicket);
 
 // Cart
 router.get('/cart', customerGetCart);
