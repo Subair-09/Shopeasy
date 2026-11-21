@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { PRODUCTS } from '../../constants/products';
 import { Category, Product } from '../../types';
 import { useNotifications } from '../../context/NotificationsContext';
 import { useAuth } from '../../context/AuthContext';
+import { fetchProductsFromAPI, fetchCategoriesFromAPI } from '../../services/api';
 
 const LOCATIONS = ['Lagos', 'Abuja', 'Port Harcourt', 'Ibadan', 'Enugu', 'Kano'];
 
@@ -36,12 +37,28 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
 
-  const onRefresh = () => {
+  useEffect(() => {
+    loadHomeData();
+  }, []);
+
+  const loadHomeData = async () => {
+    try {
+      const [apiProducts, apiCategories] = await Promise.all([
+        fetchProductsFromAPI(),
+        fetchCategoriesFromAPI(),
+      ]);
+      if (apiProducts && apiProducts.length > 0) setProducts(apiProducts);
+      if (apiCategories && apiCategories.length > 0) setCategories(apiCategories);
+    } catch {}
+  };
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 800);
+    await loadHomeData();
+    setRefreshing(false);
   };
 
   const handleCategoryPress = (category: Category) => {
@@ -57,7 +74,7 @@ export default function HomeScreen() {
   };
 
   const filteredProducts = useMemo(() => {
-    return PRODUCTS.filter((product) => {
+    return products.filter((product) => {
       const matchesCategory = selectedCategory
         ? product.category === selectedCategory
         : true;
@@ -67,15 +84,16 @@ export default function HomeScreen() {
         : true;
       return matchesCategory && matchesSearch;
     });
-  }, [selectedCategory, searchQuery]);
+  }, [products, selectedCategory, searchQuery]);
 
   const popularProducts = useMemo(() => {
-    return filteredProducts.filter((p) => p.isPopular);
+    const popular = filteredProducts.filter((p) => p.isPopular);
+    return popular.length > 0 ? popular : filteredProducts.slice(0, 4);
   }, [filteredProducts]);
 
   const specialOffers = useMemo(() => {
-    return PRODUCTS.filter((p) => p.originalPrice && p.originalPrice > p.price);
-  }, []);
+    return products.filter((p) => p.originalPrice && p.originalPrice > p.price);
+  }, [products]);
 
   const handleProductPress = (product: Product) => {
     router.push({
@@ -146,7 +164,7 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.categoriesScrollList}
           >
-            {CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <CategoryCard
                 key={cat.id}
                 category={cat}
@@ -162,7 +180,7 @@ export default function HomeScreen() {
           <View style={styles.filterChipRow}>
             <View style={styles.filterChip}>
               <Text style={styles.filterChipText}>
-                Category: {CATEGORIES.find((c) => c.id === selectedCategory)?.name}
+                Category: {categories.find((c) => c.id === selectedCategory)?.name || selectedCategory}
               </Text>
               <TouchableOpacity
                 onPress={() => setSelectedCategory(null)}

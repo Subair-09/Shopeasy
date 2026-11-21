@@ -1,13 +1,16 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:5000/api/v1/admin';
+// Live production API endpoint on Vercel
+const LIVE_API_BASE = 'https://backend-9e74cbhds-subair-09s-projects.vercel.app/api/v1/admin';
+
+export const API_BASE = (import.meta as any).env?.VITE_API_URL || LIVE_API_BASE;
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 6000,
+  timeout: 8000,
 });
 
 apiClient.interceptors.request.use((config) => {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,8 @@ import { SearchBar } from '../../components/SearchBar';
 import { ProductCard } from '../../components/ProductCard';
 import { PRODUCTS } from '../../constants/products';
 import { CATEGORIES } from '../../constants/categories';
-import { Product } from '../../types';
+import { Product, Category } from '../../types';
+import { fetchProductsFromAPI, fetchCategoriesFromAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 44) / 2;
@@ -31,9 +32,20 @@ export default function ProductsListScreen() {
   const [searchQuery, setSearchQuery] = useState<string>(params.query || '');
   const [selectedCategory, setSelectedCategory] = useState<string>(params.category || 'all');
   const [sortBy, setSortBy] = useState<SortOption>('popular');
+  const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+
+  useEffect(() => {
+    fetchProductsFromAPI(selectedCategory).then((res) => {
+      if (res && res.length > 0) setProducts(res);
+    });
+    fetchCategoriesFromAPI().then((res) => {
+      if (res && res.length > 0) setCategories(res);
+    });
+  }, [selectedCategory]);
 
   const filteredAndSortedProducts = useMemo(() => {
-    let list = PRODUCTS.filter((p) => {
+    let list = products.filter((p) => {
       const matchesCategory =
         selectedCategory === 'all' || p.category === selectedCategory;
       const matchesSearch = searchQuery
@@ -101,7 +113,7 @@ export default function ProductsListScreen() {
             </Text>
           </TouchableOpacity>
 
-          {CATEGORIES.filter((c) => c.id !== 'more').map((cat) => {
+          {categories.filter((c) => c.id !== 'more').map((cat) => {
             const isSelected = selectedCategory === cat.id;
             return (
               <TouchableOpacity

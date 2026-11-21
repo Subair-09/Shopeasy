@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { CATEGORIES } from '../../constants/categories';
 import { CategoryCard } from '../../components/CategoryCard';
 import { CategorySearchBar } from '../../components/CategorySearchBar';
 import { Category } from '../../types';
+import { fetchCategoriesFromAPI } from '../../services/api';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 44) / 2;
@@ -23,14 +24,23 @@ const CARD_WIDTH = (width - 44) / 2;
 export default function CategoriesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
   const searchInputRef = useRef<any>(null);
 
+  useEffect(() => {
+    fetchCategoriesFromAPI().then((apiCategories) => {
+      if (apiCategories && apiCategories.length > 0) {
+        setCategories(apiCategories);
+      }
+    });
+  }, []);
+
   const filteredCategories = useMemo(() => {
-    if (!searchQuery.trim()) return CATEGORIES;
-    return CATEGORIES.filter((c) =>
+    if (!searchQuery.trim()) return categories;
+    return categories.filter((c) =>
       c.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
     );
-  }, [searchQuery]);
+  }, [categories, searchQuery]);
 
   const handleCategoryPress = (category: Category) => {
     if (category.id === 'more') {

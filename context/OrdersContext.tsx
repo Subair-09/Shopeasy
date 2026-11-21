@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Order, OrderStatus } from '../types';
+import { createCustomerOrderAPI, fetchCustomerOrdersAPI } from '../services/api';
 
 interface OrdersContextType {
   orders: Order[];
@@ -108,6 +109,14 @@ export const OrdersProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } else {
         setOrders(INITIAL_ORDERS);
       }
+
+      // Sync latest orders from live backend if online
+      try {
+        const liveOrders = await fetchCustomerOrdersAPI();
+        if (liveOrders && liveOrders.length > 0) {
+          setOrders(liveOrders);
+        }
+      } catch {}
     } catch {
       setOrders(INITIAL_ORDERS);
     } finally {
@@ -124,13 +133,35 @@ export const OrdersProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       day: 'numeric',
       year: 'numeric',
     });
-    const newOrder: Order = {
+    let newOrder: Order = {
       ...orderData,
       id: `SE${randomDigits}`,
       date: dateStr,
       trackingNumber: `TRK-${randomDigits}`,
       estimatedDelivery: 'Estimated 2-3 business days',
     };
+
+    // Attempt pushing order to MongoDB backend
+    try {
+      const liveOrder = await createCustomerOrderAPI({
+        items: orderData.items,
+        subtotal: orderData.subtotal,
+        deliveryFee: orderData.deliveryFee,
+        discount: orderData.discount,
+        total: orderData.total,
+        deliveryAddress: orderData.deliveryAddress,
+        paymentMethod: orderData.paymentMethod,
+      });
+      if (liveOrder) {
+        newOrder = {
+          ...newOrder,
+          id: liveOrder.orderId || liveOrder.orderNumber || newOrder.id,
+          trackingNumber: liveOrder.trackingNumber || newOrder.trackingNumber,
+        };
+      }
+    } catch (e) {
+      // Continue locally seamlessly
+    }
 
     setOrders((prev) => [newOrder, ...prev]);
     return newOrder;

@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile } from '../types';
+import {
+  loginCustomerAPI,
+  registerCustomerAPI,
+  clearStoredToken,
+  fetchCustomerProfileAPI,
+} from '../services/api';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -88,11 +94,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email?: string, password?: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const loggedInUser: UserProfile = {
+      const emailAddress = email || DEFAULT_USER.email;
+      let loggedInUser: UserProfile = {
         ...DEFAULT_USER,
-        email: email || DEFAULT_USER.email,
-        name: email ? email.split('@')[0].replace('.', ' ') : DEFAULT_USER.name,
+        email: emailAddress,
+        name: emailAddress.split('@')[0].replace('.', ' '),
       };
+
+      // Attempt live backend login
+      try {
+        const liveData = await loginCustomerAPI(emailAddress, password);
+        if (liveData?.customer) {
+          const cust = liveData.customer;
+          loggedInUser = {
+            id: cust._id || cust.id,
+            name: `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || loggedInUser.name,
+            email: cust.email || loggedInUser.email,
+            phone: cust.phone || loggedInUser.phone,
+            avatar: cust.avatar || loggedInUser.avatar,
+            isPremium: Boolean(cust.isVip),
+            addresses: cust.addresses?.length > 0 ? cust.addresses : DEFAULT_USER.addresses,
+          };
+        }
+      } catch (apiErr) {
+        // Gracefully continue with local/fallback profile
+      }
+
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(loggedInUser));
       setUser(loggedInUser);
       setIsAuthenticated(true);
@@ -104,10 +131,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const register = async (name: string, email: string, phone: string): Promise<boolean> => {
+  const register = async (name: string, email: string, phone: string, password?: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const newUser: UserProfile = {
+      let newUser: UserProfile = {
         id: `user-${Date.now()}`,
         name: name.trim(),
         email: email.trim().toLowerCase(),
@@ -125,6 +152,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           },
         ],
       };
+
+      // Attempt live backend registration
+      try {
+        const liveData = await registerCustomerAPI(name, email, phone, password);
+        if (liveData?.customer) {
+          const cust = liveData.customer;
+          newUser = {
+            id: cust._id || cust.id,
+            name: `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || name,
+            email: cust.email || email,
+            phone: cust.phone || phone,
+            avatar: cust.avatar || newUser.avatar,
+            isPremium: false,
+            addresses: cust.addresses?.length > 0 ? cust.addresses : newUser.addresses,
+          };
+        }
+      } catch (apiErr) {
+        // Fallback gracefully
+      }
+
       await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUser));
       setUser(newUser);
       setIsAuthenticated(true);
@@ -139,7 +186,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     setIsLoading(true);
     try {
-      await AsyncStorage.removeItem(USER_STORAGE_KEY);
+      await Promise.all([
+        AsyncStorage.removeItem(USER_STORAGE_KEY),
+        clearStoredToken(),
+      ]);
       setUser(null);
       setIsAuthenticated(false);
     } finally {
